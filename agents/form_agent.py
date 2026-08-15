@@ -42,10 +42,21 @@ class FormAgent:
     
     def _precompute_team_stats(self):
         """Precompute batting RR and death-over economy per team per match."""
+        # Add bowling_team = the team not batting
+        self.deliveries = self.deliveries.copy()
+        
+        # Get team1/team2 from matches for each match_id
+        match_teams = self.matches[['match_id', 'team1', 'team2']].drop_duplicates()
+        self.deliveries = self.deliveries.merge(match_teams, on='match_id', how='left')
+        self.deliveries['bowling_team'] = self.deliveries.apply(
+            lambda row: row['team2'] if row['batting_team'] == row['team1'] else row['team1'],
+            axis=1
+        )
+        
         # Batting: runs per over per team per match
         batting = self.deliveries.groupby(['match_id', 'batting_team']).agg(
-            total_runs=('total_runs', 'sum'),
-            total_balls=('ball_number', 'count')
+            total_runs=('runs_total', 'sum'),
+            total_balls=('actual_delivery', 'count')
         ).reset_index()
         batting['run_rate'] = batting['total_runs'] / (batting['total_balls'] / 6)
         self.batting_stats = batting[['match_id', 'batting_team', 'run_rate']].rename(
@@ -53,10 +64,10 @@ class FormAgent:
         )
         
         # Bowling: death-over economy (overs 16-20) per team per match
-        death_overs = self.deliveries[(self.deliveries['over'] >= 16) & (self.deliveries['over'] <= 20)]
+        death_overs = self.deliveries[(self.deliveries['over'] >= 15) & (self.deliveries['over'] <= 19)]
         bowling = death_overs.groupby(['match_id', 'bowling_team']).agg(
-            death_runs=('total_runs', 'sum'),
-            death_balls=('ball_number', 'count')
+            death_runs=('runs_total', 'sum'),
+            death_balls=('actual_delivery', 'count')
         ).reset_index()
         bowling['death_economy'] = bowling['death_runs'] / (bowling['death_balls'] / 6)
         self.bowling_stats = bowling[['match_id', 'bowling_team', 'death_economy']].rename(
