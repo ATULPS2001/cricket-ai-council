@@ -17,6 +17,12 @@ Output:
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
+import sys
+
+# Add project root to path so imports work from evaluation folder
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 from agents.stats_agent import StatsAgent
 
 DATA_DIR = Path(__file__).parent.parent / "data" / "processed"
