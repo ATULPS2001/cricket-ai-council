@@ -59,60 +59,28 @@ class FormAgent:
             total_balls=('actual_delivery', 'count')
         ).reset_index()
         batting['run_rate'] = batting['total_runs'] / (batting['total_balls'] / 6)
-        self.batting_stats = batting[['match_id', 'batting_team', 'run_rate']].rename(
-            columns={'batting_team': 'team', 'run_rate': 'batting_rr'}
-        )
+        batting = batting[['match_id', 'batting_team', 'run_rate']]
         
-        # Bowling: death-over economy (overs 16-20) per team per match
+        # Bowling: death-over economy (overs 15-19, i.e., 16th-20th over) per team per match
         death_overs = self.deliveries[(self.deliveries['over'] >= 15) & (self.deliveries['over'] <= 19)]
         bowling = death_overs.groupby(['match_id', 'bowling_team']).agg(
             death_runs=('runs_total', 'sum'),
             death_balls=('actual_delivery', 'count')
         ).reset_index()
         bowling['death_economy'] = bowling['death_runs'] / (bowling['death_balls'] / 6)
-        self.bowling_stats = bowling[['match_id', 'bowling_team', 'death_economy']].rename(
-            columns={'bowling_team': 'team'}
-        )
+        bowling = bowling[['match_id', 'bowling_team', 'death_economy']]
         
-        # Merge batting stats into matches
-        self.matches = self.matches.merge(
-            self.batting_stats, 
-            left_on=['match_id', 'team1'], 
-            right_on=['match_id', 'team'], 
-            how='left',
-            suffixes=('', '_team2_bat')
-        )
-        self.matches = self.matches.merge(
-            self.batting_stats, 
-            left_on=['match_id', 'team2'], 
-            right_on=['match_id', 'team'], 
-            how='left',
-            suffixes=('_team1_bat', '_team2_bat')
-        )
-        
-        # Merge bowling stats into matches
-        self.matches = self.matches.merge(
-            self.bowling_stats, 
-            left_on=['match_id', 'team1'], 
-            right_on=['match_id', 'team'], 
-            how='left',
-            suffixes=('', '_team2_bowl')
-        )
-        self.matches = self.matches.merge(
-            self.bowling_stats, 
-            left_on=['match_id', 'team2'], 
-            right_on=['match_id', 'team'], 
-            how='left',
-            suffixes=('_team1_bowl', '_team2_bowl')
-        )
-        
-        # Rename columns to consistent names
-        self.matches = self.matches.rename(columns={
-            'batting_rr': 'batting_rr_team1',
-            'batting_rr_team1_bat': 'batting_rr_team2',
-            'death_economy': 'death_economy_team1',
-            'death_economy_team1_bowl': 'death_economy_team2'
-        })
+        # Create lookup dicts for fast access
+        self.batting_lookup = batting.set_index(['match_id', 'batting_team'])['run_rate'].to_dict()
+        self.bowling_lookup = bowling.set_index(['match_id', 'bowling_team'])['death_economy'].to_dict()
+    
+    def _get_batting_rr(self, match_id: int, team: str) -> Optional[float]:
+        """Get batting run rate for a team in a specific match."""
+        return self.batting_lookup.get((match_id, team), None)
+    
+    def _get_bowling_economy(self, match_id: int, team: str) -> Optional[float]:
+        """Get death-over bowling economy for a team in a specific match."""
+        return self.bowling_lookup.get((match_id, team), None)
     
     def _get_last_n_matches(self, team: str, n: int = 5, before_match_id: Optional[int] = None) -> pd.DataFrame:
         """Get last N matches for a team, optionally before a specific match_id."""
@@ -143,16 +111,28 @@ class FormAgent:
         wins = ((last_matches['winner'] == team)).sum()
         win_pct = wins / len(last_matches)
         
-        # Batting RR (average of both innings, since team bats once per match)
-        batting_rr = last_matches['batting_rr_team1'].fillna(last_matches['batting_rr_team2']).mean()
+        # Batting RR and death economy for each match
+        batting_rrs = []
+        death_economies = []
+        for _, m in last_matches.iterrows():
+            mid = m['match_id']
+            # Batting RR: team could be team1 or team2
+            rr = self._get_batting_rr(mid, team)
+            if rr is not None:
+                batting_rrs.append(rr)
+            
+            # Bowling economy
+            econ = self._get_bowling_economy(mid, team)
+            if econ is not None:
+                death_economies.append(econ)
         
-        # Death-over economy (bowling)
-        death_economy = last_matches['death_economy_team1'].fillna(last_matches['death_economy_team2']).mean()
+        batting_rr = np.mean(batting_rrs) if batting_rrs else 8.0
+        death_economy = np.mean(death_economies) if death_economies else 9.0
         
         return {
             'win_pct': win_pct,
-            'batting_rr': batting_rr if pd.notna(batting_rr) else 8.0,
-            'death_economy': death_economy if pd.notna(death_economy) else 9.0,
+            'batting_rr': batting_rr,
+            'death_economy': death_economy,
             'n_matches': len(last_matches)
         }
     
@@ -234,7 +214,7 @@ class FormAgent:
         
         # Decision
         score_diff = score1 - score2
-        threshold = 0.08  # Need meaningful gap to make a prediction
+        threshold = 0.05  # Need meaningful gap to make a prediction
         
         if abs(score_diff) < threshold:
             # Neutral - form too close
