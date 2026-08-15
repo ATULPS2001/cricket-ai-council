@@ -1,42 +1,51 @@
 # Cricket AI Council
 
-A multi-agent cricket prediction system built for IPL match analysis.
+A multi-agent AI system for structured cricket match prediction, built with backtested evaluation.
 
 ## Overview
 
-The Cricket AI Council is a prototype system that combines statistical analysis with structured reasoning to predict IPL match outcomes. It consists of three specialized agents:
+This project tests a hypothesis: **Does recent form matter more than historical performance in IPL match outcomes?**
 
-1. **Stats Agent** - Analyzes historical match data to generate predictions
-2. **Form Agent** - Evaluates recent team form and momentum (TODO)
-3. **Formulator Agent** - Synthesizes inputs into final verdicts (TODO)
+The system decomposes prediction into separate signals (historical stats, recent form), evaluates each independently via backtesting, and will fuse them via a Formulator Agent.
+
+## Backtested Results (2023-2024 IPL)
+
+| Agent | Signal Type | Test Set | Accuracy | Notes |
+|-------|-------------|----------|----------|-------|
+| **Stats Agent** | Historical aggregates (H2H, venue, toss) | 144 matches | **55.6%** | Baseline random = 50% |
+| **Form Agent** | Last 5 matches (win%, batting RR, death bowling) | 144 matches | **43.7%** | Negative signal — form alone underperforms |
+
+**Key insight:** Recent form is a *negative predictor*. Historical patterns outperform "hot team" narratives.
 
 ## Architecture
 
 ```
 cricket-ai-council/
 ├── agents/
-│   ├── stats_agent.py      # Statistical prediction engine
-│   ├── form_agent.py       # Recent form analysis (TODO)
-│   └── formulator_agent.py # Decision synthesis (TODO)
+│   ├── stats_agent.py      # Historical aggregate-based predictions
+│   ├── form_agent.py       # Recent form & momentum analysis
+│   └── formulator_agent.py # Signal fusion (TODO)
 ├── data/
 │   ├── raw/                # Raw CSV data
 │   └── processed/          # Cleaned matches.csv, deliveries.csv
 ├── evaluation/
-│   ├── backtest_stats_agent.py  # Backtest harness
+│   ├── backtest_stats_agent.py  # Stats Agent backtest harness
+│   ├── backtest_form_agent.py   # Form Agent backtest harness
 │   └── results/            # Backtest output CSVs
 └── docs/
     └── council_design.md   # System design document
 ```
 
-## Stats Agent
+## Agents
 
-The Stats Agent predicts match winners based on:
+### Stats Agent
+
+Predicts match winners based on:
 - Historical head-to-head records
 - Venue-specific performance
 - Toss and batting-first patterns
 
-### Query Format
-
+**Usage:**
 ```python
 from agents.stats_agent import StatsAgent
 import pandas as pd
@@ -58,20 +67,27 @@ print(verdict.confidence)   # 0.72
 print(verdict.reasoning)    # "..."
 ```
 
-### Backtested performance
+### Form Agent
 
-The Stats Agent was evaluated on held-out IPL matches from 2023-2024:
+Analyzes recent form signals:
+- Last 5 matches: win%, batting run rate, death-over bowling economy
+- Recent H2H record (last 5 meetings)
+- Composite form score with weighted components
 
-| Metric | Value |
-|--------|-------|
-| Test set size | 144 matches |
-| Accuracy | **55.6%** |
-| Baseline (random) | 50% |
-| Average confidence | 0.78 |
+**Usage:**
+```python
+from agents.form_agent import FormAgent
 
-**Note:** Confidence scores are currently uncalibrated — average confidence (0.78) exceeds actual accuracy (55.6%). Calibration is planned for a future release.
+agent = FormAgent(matches, deliveries)
 
-Per-team accuracy varies (e.g., 76.9% on Mumbai Indians, 56.3% on Rajasthan Royals), suggesting venue and team-specific biases in the underlying data.
+query = {
+    "type": "form_check",
+    "teams": ["Mumbai Indians", "Chennai Super Kings"],
+    "match_id": 1234567  # For time-aware form (matches before this one)
+}
+
+verdict = agent.analyze(query)
+```
 
 ## Setup
 
@@ -83,8 +99,9 @@ cd cricket-ai-council
 # Install dependencies
 pip install pandas
 
-# Run the backtest
+# Run backtests
 python evaluation/backtest_stats_agent.py
+python evaluation/backtest_form_agent.py
 ```
 
 ## Data
@@ -94,6 +111,10 @@ The system uses ball-by-ball IPL match data in CSV format:
 - `deliveries.csv` - Ball-by-ball delivery data
 
 Data should be placed in `data/processed/` directory.
+
+## Design Document
+
+See [`docs/council_design.md`](docs/council_design.md) for full system architecture and agent specifications.
 
 ## License
 
