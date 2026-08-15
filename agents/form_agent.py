@@ -1,0 +1,246 @@
+"""
+Form Agent - Recent form and momentum analysis for IPL teams.
+
+Analyzes:
+- Last 5 matches: win%, batting run rate, death-over bowling economy
+- Recent H2H record (last 5 meetings)
+- Form differential between two teams
+
+Query format:
+{
+    "type": "form_check",
+    "teams": ["Team A", "Team B"],
+    "venue": "optional",
+    "match_id": "optional - for time-aware form (matches before this one)"
+}
+
+Returns Verdict with prediction, confidence, reasoning.
+"""
+from dataclasses import dataclass
+from typing import Optional, List
+import pandas as pd
+import numpy as np
+
+
+@dataclass
+class Verdict:
+    prediction: str
+    confidence: float
+    reasoning: str
+
+
+class FormAgent:
+    def __init__(self, matches: pd.DataFrame, deliveries: pd.DataFrame):
+        self.matches = matches.copy()
+        self.deliveries = deliveries.copy()
+        
+        # Precompute match order within seasons for "last N matches" logic
+        self.matches = self.matches.sort_values(['season_int', 'match_id']).reset_index(drop=True)
+        
+        # Precompute team-level aggregates per match
+        self._precompute_team_stats()
+    
+    def _precompute_team_stats(self):
+        """Precompute batting RR and death-over economy per team per match."""
+        # Batting: runs per over per team per match
+        batting = self.deliveries.groupby(['match_id', 'batting_team']).agg(
+            total_runs=('total_runs', 'sum'),
+            total_balls=('ball_number', 'count')
+        ).reset_index()
+        batting['run_rate'] = batting['total_runs'] / (batting['total_balls'] / 6)
+        self.batting_stats = batting[['match_id', 'batting_team', 'run_rate']].rename(
+            columns={'batting_team': 'team', 'run_rate': 'batting_rr'}
+        )
+        
+        # Bowling: death-over economy (overs 16-20) per team per match
+        death_overs = self.deliveries[(self.deliveries['over'] >= 16) & (self.deliveries['over'] <= 20)]
+        bowling = death_overs.groupby(['match_id', 'bowling_team']).agg(
+            death_runs=('total_runs', 'sum'),
+            death_balls=('ball_number', 'count')
+        ).reset_index()
+        bowling['death_economy'] = bowling['death_runs'] / (bowling['death_balls'] / 6)
+        self.bowling_stats = bowling[['match_id', 'bowling_team', 'death_economy']].rename(
+            columns={'bowling_team': 'team'}
+        )
+        
+        # Merge into matches
+        self.matches = self.matches.merge(
+            self.batting_stats, 
+            left_on=['match_id', 'team1'], 
+            right_on=['match_id', 'team'], 
+            how='left'
+        )
+        self.matches = self.matches.merge(
+            self.batting_stats, 
+            left_on=['match_id', 'team2'], 
+            right_on=['match_id', 'team'], 
+            how='left',
+            suffixes=('_team1', '_team2')
+        )
+        self.matches = self.matches.merge(
+            self.bowling_stats, 
+            left_on=['match_id', 'team1'], 
+            right_on=['match_id', 'team'], 
+            how='left'
+        )
+        self.matches = self.matches.merge(
+            self.bowling_stats, 
+            left_on=['match_id', 'team2'], 
+            right_on=['match_id', 'team'], 
+            how='left',
+            suffixes=('_team1', '_team2')
+        )
+    
+    def _get_last_n_matches(self, team: str, n: int = 5, before_match_id: Optional[int] = None) -> pd.DataFrame:
+        """Get last N matches for a team, optionally before a specific match_id."""
+        team_matches = self.matches[
+            (self.matches['team1'] == team) | (self.matches['team2'] == team)
+        ].copy()
+        
+        if before_match_id is not None:
+            team_matches = team_matches[team_matches['match_id'] < before_match_id]
+        
+        # Drop ties/no-results
+        team_matches = team_matches[team_matches['winner'].notna()]
+        team_matches = team_matches[~team_matches['result'].isin(['tie', 'no result'])]
+        
+        # Sort by season_int, match_id and take last N
+        team_matches = team_matches.sort_values(['season_int', 'match_id']).tail(n)
+        
+        return team_matches
+    
+    def _compute_form_score(self, team: str, before_match_id: Optional[int] = None) -> dict:
+        """Compute form score components for a team."""
+        last_matches = self._get_last_n_matches(team, n=5, before_match_id=before_match_id)
+        
+        if len(last_matches) == 0:
+            return {'win_pct': 0.5, 'batting_rr': 8.0, 'death_economy': 9.0, 'n_matches': 0}
+        
+        # Win%
+        wins = ((last_matches['winner'] == team)).sum()
+        win_pct = wins / len(last_matches)
+        
+        # Batting RR (average of both innings, since team bats once per match)
+        batting_rr = last_matches['batting_rr_team1'].fillna(last_matches['batting_rr_team2']).mean()
+        
+        # Death-over economy (bowling)
+        death_economy = last_matches['death_economy_team1'].fillna(last_matches['death_economy_team2']).mean()
+        
+        return {
+            'win_pct': win_pct,
+            'batting_rr': batting_rr if pd.notna(batting_rr) else 8.0,
+            'death_economy': death_economy if pd.notna(death_economy) else 9.0,
+            'n_matches': len(last_matches)
+        }
+    
+    def _get_h2h_recent(self, team1: str, team2: str, n: int = 5, before_match_id: Optional[int] = None) -> float:
+        """Get team1's win% in last N H2H matches vs team2."""
+        h2h = self.matches[
+            ((self.matches['team1'] == team1) & (self.matches['team2'] == team2)) |
+            ((self.matches['team1'] == team2) & (self.matches['team2'] == team1))
+        ].copy()
+        
+        if before_match_id is not None:
+            h2h = h2h[h2h['match_id'] < before_match_id]
+        
+        # Drop ties/no-results
+        h2h = h2h[h2h['winner'].notna()]
+        h2h = h2h[~h2h['result'].isin(['tie', 'no result'])]
+        
+        h2h = h2h.sort_values(['season_int', 'match_id']).tail(n)
+        
+        if len(h2h) == 0:
+            return 0.5  # Neutral
+        
+        team1_wins = ((h2h['winner'] == team1)).sum()
+        return team1_wins / len(h2h)
+    
+    def analyze(self, query: dict) -> Verdict:
+        """
+        Analyze form for two teams.
+        
+        Query:
+        {
+            "type": "form_check",
+            "teams": ["Team A", "Team B"],
+            "venue": "optional",
+            "match_id": "optional - for time-aware form"
+        }
+        """
+        teams = query['teams']
+        match_id = query.get('match_id', None)
+        
+        if len(teams) != 2:
+            return Verdict(
+                prediction=teams[0] if teams else "Unknown",
+                confidence=0.0,
+                reasoning="Need exactly 2 teams for form analysis"
+            )
+        
+        team1, team2 = teams[0], teams[1]
+        
+        # Compute form scores
+        form1 = self._compute_form_score(team1, before_match_id=match_id)
+        form2 = self._compute_form_score(team2, before_match_id=match_id)
+        
+        # H2H recent edge
+        h2h_edge = self._get_h2h_recent(team1, team2, n=5, before_match_id=match_id)
+        
+        # Composite form score
+        # Weights: 40% win%, 30% batting RR, 20% bowling economy (inverted), 10% H2H
+        # Normalize: batting RR ~8-10 (higher=better), death economy ~8-12 (lower=better)
+        batting_rr_norm = (form1['batting_rr'] - 7) / 4  # ~0.25-0.75 range
+        death_econ_inv = (12 - form1['death_economy']) / 4  # Invert: lower economy = higher score
+        
+        score1 = (
+            0.4 * form1['win_pct'] +
+            0.3 * batting_rr_norm +
+            0.2 * death_econ_inv +
+            0.1 * h2h_edge
+        )
+        
+        batting_rr_norm_2 = (form2['batting_rr'] - 7) / 4
+        death_econ_inv_2 = (12 - form2['death_economy']) / 4
+        
+        score2 = (
+            0.4 * form2['win_pct'] +
+            0.3 * batting_rr_norm_2 +
+            0.2 * death_econ_inv_2 +
+            0.1 * (1 - h2h_edge)  # H2H edge for team2 is inverse
+        )
+        
+        # Decision
+        score_diff = score1 - score2
+        threshold = 0.08  # Need meaningful gap to make a prediction
+        
+        if abs(score_diff) < threshold:
+            # Neutral - form too close
+            return Verdict(
+                prediction="neutral",
+                confidence=0.5,
+                reasoning=f"Form too close: {team1} ({score1:.2f}) vs {team2} ({score2:.2f}). Diff: {score_diff:.2f} < threshold {threshold}"
+            )
+        
+        # Predict higher-score team
+        if score_diff > 0:
+            prediction = team1
+            confidence = 0.5 + (score_diff * 1.5)  # Scale confidence by gap
+        else:
+            prediction = team2
+            confidence = 0.5 + (abs(score_diff) * 1.5)
+        
+        confidence = min(0.95, max(0.55, confidence))  # Clamp to reasonable range
+        
+        reasoning = (
+            f"{prediction} in better form: "
+            f"win% {form1['win_pct']:.0%} vs {form2['win_pct']:.0%}, "
+            f"batting RR {form1['batting_rr']:.1f} vs {form2['batting_rr']:.1f}, "
+            f"death economy {form1['death_economy']:.1f} vs {form2['death_economy']:.1f}, "
+            f"H2H edge {h2h_edge:.0%}"
+        )
+        
+        return Verdict(
+            prediction=prediction,
+            confidence=round(confidence, 2),
+            reasoning=reasoning
+        )
