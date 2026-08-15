@@ -29,10 +29,23 @@ DATA_DIR = Path(__file__).parent.parent / "data" / "processed"
 RESULTS_DIR = Path(__file__).parent.parent / "evaluation" / "results"
 
 
+def parse_season(s):
+    """Convert season string like '2007/08' → 2007, '2020' → 2020."""
+    if pd.isna(s):
+        return None
+    s = str(s)
+    if '/' in s:
+        return int(s.split('/')[0])
+    return int(s)
+
+
 def backtest_stats_agent():
     print("Loading data...")
     matches = pd.read_csv(DATA_DIR / "matches.csv")
     deliveries = pd.read_csv(DATA_DIR / "deliveries.csv")
+
+    # Parse season strings to integers
+    matches['season_int'] = matches['season'].apply(parse_season)
 
     # Filter to matches with a clear winner (exclude ties/no-results)
     matches_with_result = matches.dropna(subset=['winner']).copy()
@@ -41,8 +54,8 @@ def backtest_stats_agent():
     # Train/test split by season
     train_seasons = list(range(2008, 2023))  # 2008-2022
     test_seasons = [2023, 2024]  # 2023-2024
-    train_matches = matches_with_result[matches_with_result['season'].isin(train_seasons)]
-    test_matches = matches_with_result[matches_with_result['season'].isin(test_seasons)]
+    train_matches = matches_with_result[matches_with_result['season_int'].isin(train_seasons)]
+    test_matches = matches_with_result[matches_with_result['season_int'].isin(test_seasons)]
 
     print(f"Train: {len(train_matches)} matches ({min(train_seasons)}-{max(train_seasons)})")
     print(f"Test: {len(test_matches)} matches ({min(test_seasons)}-{max(test_seasons)})")
