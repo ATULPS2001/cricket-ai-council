@@ -30,13 +30,13 @@ Most cricket prediction tools produce a single black-box number. This project in
 
 ## Council members
 
-| Agent | Data it reasons over | Role |
-|---|---|---|
-| Stats Agent | Historical aggregates (averages, strike rates, head-to-head) | Long-run baseline |
-| Form Agent | Last 5-10 innings | Recent-form weighting |
-| Conditions Agent | Pitch report, weather, venue history, toss | Context adjustment |
-| Momentum Agent | Ball-by-ball game state | In-match win probability |
-| Arbitrator | All agent outputs + confidence scores | Conflict resolution |
+| Agent | Status | Data it reasons over | Role |
+|---|---|---|---|
+| **Stats Agent** | ✅ Implemented | Historical aggregates (averages, strike rates, head-to-head) | Long-run baseline |
+| Form Agent | 🚧 Planned | Last 5-10 innings | Recent-form weighting |
+| Conditions Agent | 🚧 Planned | Pitch report, weather, venue history, toss | Context adjustment |
+| Momentum Agent | 🚧 Planned | Ball-by-ball game state | In-match win probability |
+| Arbitrator | 🚧 Planned | All agent outputs + confidence scores | Conflict resolution |
 
 ## Data sources
 
@@ -45,34 +45,78 @@ Most cricket prediction tools produce a single black-box number. This project in
 
 ## Tech stack
 
-- Python 3.11+
-- LLM APIs (agent reasoning)
-- pandas / scikit-learn (baseline ML models for backtesting)
+- Python 3.9+
+- pandas, scikit-learn (data processing + baseline ML)
+- LLM APIs (agent reasoning — OpenAI, Anthropic, or local models)
 
-## Status
+## Quick start
 
-🚧 Early prototype. Currently building: agent base class + Stats Agent + backtesting harness against Cricsheet historical matches.
+```bash
+# 1. Clone and install
+git clone https://github.com/ATULPS2001/cricket-ai-council.git
+cd cricket-ai-council
+pip install -r requirements.txt
 
-## Roadmap
+# 2. Download Cricsheet data
+# Go to https://cricsheet.org/downloads/, grab the IPL JSON zip,
+# unzip into data/raw/ (each match becomes one <id>.json file)
 
-- [ ] `base_agent.py` shared interface
-- [ ] Stats Agent + backtest on historical data
+# 3. Parse the data
+python data/load_cricsheet.py
+
+# 4. Run the Stats Agent
+python agents/stats_agent.py
+```
+
+## Stats Agent usage example
+
+```python
+import pandas as pd
+from agents.stats_agent import StatsAgent
+
+matches = pd.read_csv("data/processed/matches.csv")
+deliveries = pd.read_csv("data/processed/deliveries.csv")
+agent = StatsAgent(matches, deliveries)
+
+# Example 1: Toss-and-bat gamble prediction
+q1 = {
+    "type": "toss_bat_gamble",
+    "teams": ["Chennai Super Kings", "Mumbai Indians"],
+    "venue": "Wankhede"
+}
+verdict1 = agent.analyze(q1)
+print(verdict1.prediction, "— confidence:", verdict1.confidence)
+print(verdict1.reasoning)
+
+# Example 2: Top scorer among a list of players
+q2 = {
+    "type": "top_scorer",
+    "players": ["V Kohli", "RG Sharma", "MS Dhoni"]
+}
+verdict2 = agent.analyze(q2)
+print(verdict2.prediction, "— confidence:", verdict2.confidence)
+
+# Example 3: Head-to-head comparison
+q3 = {
+    "type": "head_to_head",
+    "players": ["V Kohli", "RG Sharma"],
+    "venue": "M Chinnaswamy"
+}
+verdict3 = agent.analyze(q3)
+print(verdict3.prediction, "— confidence:", verdict3.confidence)
+```
+
+## Progress tracker
+
+- [x] `base_agent.py` shared interface
+- [x] Stats Agent + backtest on historical data
 - [ ] Form Agent
 - [ ] Conditions Agent
 - [ ] Momentum Agent (ball-by-ball, sequential — not parallel fan-out)
 - [ ] Arbitrator + Synthesizer
 - [ ] Backtested accuracy report
 - [ ] Live API integration
-- [ ] Simple web UI
-
-## Setup
-
-```bash
-git clone https://github.com/ATULPS2001/cricket-ai-council.git
-cd cricket-ai-council
-pip install -r requirements.txt
-cp .env.example .env  # add your LLM API keys
-```
+- [ ] Simple web UI (Streamlit)
 
 ## License
 
