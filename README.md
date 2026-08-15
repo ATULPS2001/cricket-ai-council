@@ -1,122 +1,99 @@
 # Cricket AI Council
 
-> A multi-agent LLM system where specialized AI agents independently analyze a cricket question, debate their conclusions, and an arbitrator synthesizes a single verdict with a confidence score.
+A multi-agent cricket prediction system built for IPL match analysis.
 
-## Why this exists
+## Overview
 
-Most cricket prediction tools produce a single black-box number. This project instead makes disagreement visible: a **Stats Agent**, **Form Agent**, **Conditions Agent**, and **Momentum Agent** each reason independently over the same question, and an **Arbitrator** resolves conflicts into a final, explainable verdict.
+The Cricket AI Council is a prototype system that combines statistical analysis with structured reasoning to predict IPL match outcomes. It consists of three specialized agents:
+
+1. **Stats Agent** - Analyzes historical match data to generate predictions
+2. **Form Agent** - Evaluates recent team form and momentum (TODO)
+3. **Formulator Agent** - Synthesizes inputs into final verdicts (TODO)
 
 ## Architecture
 
 ```
-                 ┌─────────────┐
-   Question ───► │   Router     │
-                 └──────┬──────┘
-                        │  fan-out
-        ┌───────────────┼───────────────┬───────────────┐
-        ▼               ▼               ▼               ▼
-  Stats Agent      Form Agent    Conditions Agent   Momentum Agent
-        │               │               │               │
-        └───────────────┴───────┬───────┴───────────────┘
-                                 ▼
-                          Arbitrator
-                                 │
-                                 ▼
-                           Synthesizer
-                                 │
-                                 ▼
-                        Final verdict + confidence
+cricket-ai-council/
+├── agents/
+│   ├── stats_agent.py      # Statistical prediction engine
+│   ├── form_agent.py       # Recent form analysis (TODO)
+│   └── formulator_agent.py # Decision synthesis (TODO)
+├── data/
+│   ├── raw/                # Raw CSV data
+│   └── processed/          # Cleaned matches.csv, deliveries.csv
+├── evaluation/
+│   ├── backtest_stats_agent.py  # Backtest harness
+│   └── results/            # Backtest output CSVs
+└── docs/
+    └── council_design.md   # System design document
 ```
 
-## Council members
+## Stats Agent
 
-| Agent | Status | Data it reasons over | Role |
-|---|---|---|---|
-| **Stats Agent** | ✅ Implemented | Historical aggregates (averages, strike rates, head-to-head) | Long-run baseline |
-| Form Agent | 🚧 Planned | Last 5-10 innings | Recent-form weighting |
-| Conditions Agent | 🚧 Planned | Pitch report, weather, venue history, toss | Context adjustment |
-| Momentum Agent | 🚧 Planned | Ball-by-ball game state | In-match win probability |
-| Arbitrator | 🚧 Planned | All agent outputs + confidence scores | Conflict resolution |
+The Stats Agent predicts match winners based on:
+- Historical head-to-head records
+- Venue-specific performance
+- Toss and batting-first patterns
 
-## Data sources
-
-- [Cricsheet](https://cricsheet.org/) — free historical ball-by-ball data (primary, for backtesting)
-- CricketData / Roanuz APIs — live match data (planned, for real-time demos)
-
-## Tech stack
-
-- Python 3.9+
-- pandas, scikit-learn (data processing + baseline ML)
-- LLM APIs (agent reasoning — OpenAI, Anthropic, or local models)
-
-## Quick start
-
-```bash
-# 1. Clone and install
-git clone https://github.com/ATULPS2001/cricket-ai-council.git
-cd cricket-ai-council
-pip install -r requirements.txt
-
-# 2. Download Cricsheet data
-# Go to https://cricsheet.org/downloads/, grab the IPL JSON zip,
-# unzip into data/raw/ (each match becomes one <id>.json file)
-
-# 3. Parse the data
-python data/load_cricsheet.py
-
-# 4. Run the Stats Agent
-python agents/stats_agent.py
-```
-
-## Stats Agent usage example
+### Query Format
 
 ```python
-import pandas as pd
 from agents.stats_agent import StatsAgent
+import pandas as pd
 
 matches = pd.read_csv("data/processed/matches.csv")
 deliveries = pd.read_csv("data/processed/deliveries.csv")
+
 agent = StatsAgent(matches, deliveries)
 
-# Example 1: Toss-and-bat gamble prediction
-q1 = {
+query = {
     "type": "toss_bat_gamble",
-    "teams": ["Chennai Super Kings", "Mumbai Indians"],
-    "venue": "Wankhede"
+    "teams": ["Mumbai Indians", "Chennai Super Kings"],
+    "venue": "Wankhede Stadium, Mumbai"
 }
-verdict1 = agent.analyze(q1)
-print(verdict1.prediction, "— confidence:", verdict1.confidence)
-print(verdict1.reasoning)
 
-# Example 2: Top scorer among a list of players
-q2 = {
-    "type": "top_scorer",
-    "players": ["V Kohli", "RG Sharma", "MS Dhoni"]
-}
-verdict2 = agent.analyze(q2)
-print(verdict2.prediction, "— confidence:", verdict2.confidence)
-
-# Example 3: Head-to-head comparison
-q3 = {
-    "type": "head_to_head",
-    "players": ["V Kohli", "RG Sharma"],
-    "venue": "M Chinnaswamy"
-}
-verdict3 = agent.analyze(q3)
-print(verdict3.prediction, "— confidence:", verdict3.confidence)
+verdict = agent.analyze(query)
+print(verdict.prediction)   # "Mumbai Indians"
+print(verdict.confidence)   # 0.72
+print(verdict.reasoning)    # "..."
 ```
 
-## Progress tracker
+### Backtested performance
 
-- [x] `base_agent.py` shared interface
-- [x] Stats Agent + backtest on historical data
-- [ ] Form Agent
-- [ ] Conditions Agent
-- [ ] Momentum Agent (ball-by-ball, sequential — not parallel fan-out)
-- [ ] Arbitrator + Synthesizer
-- [ ] Backtested accuracy report
-- [ ] Live API integration
-- [ ] Simple web UI (Streamlit)
+The Stats Agent was evaluated on held-out IPL matches from 2023-2024:
+
+| Metric | Value |
+|--------|-------|
+| Test set size | 144 matches |
+| Accuracy | **55.6%** |
+| Baseline (random) | 50% |
+| Average confidence | 0.78 |
+
+**Note:** Confidence scores are currently uncalibrated — average confidence (0.78) exceeds actual accuracy (55.6%). Calibration is planned for a future release.
+
+Per-team accuracy varies (e.g., 76.9% on Mumbai Indians, 56.3% on Rajasthan Royals), suggesting venue and team-specific biases in the underlying data.
+
+## Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/ATULPS2001/cricket-ai-council.git
+cd cricket-ai-council
+
+# Install dependencies
+pip install pandas
+
+# Run the backtest
+python evaluation/backtest_stats_agent.py
+```
+
+## Data
+
+The system uses ball-by-ball IPL match data in CSV format:
+- `matches.csv` - Match-level metadata (teams, venue, toss, winner)
+- `deliveries.csv` - Ball-by-ball delivery data
+
+Data should be placed in `data/processed/` directory.
 
 ## License
 
