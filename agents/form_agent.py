@@ -74,33 +74,45 @@ class FormAgent:
             columns={'bowling_team': 'team'}
         )
         
-        # Merge into matches
+        # Merge batting stats into matches
         self.matches = self.matches.merge(
             self.batting_stats, 
             left_on=['match_id', 'team1'], 
             right_on=['match_id', 'team'], 
-            how='left'
+            how='left',
+            suffixes=('', '_team2_bat')
         )
         self.matches = self.matches.merge(
             self.batting_stats, 
             left_on=['match_id', 'team2'], 
             right_on=['match_id', 'team'], 
             how='left',
-            suffixes=('_team1', '_team2')
+            suffixes=('_team1_bat', '_team2_bat')
         )
+        
+        # Merge bowling stats into matches
         self.matches = self.matches.merge(
             self.bowling_stats, 
             left_on=['match_id', 'team1'], 
             right_on=['match_id', 'team'], 
-            how='left'
+            how='left',
+            suffixes=('', '_team2_bowl')
         )
         self.matches = self.matches.merge(
             self.bowling_stats, 
             left_on=['match_id', 'team2'], 
             right_on=['match_id', 'team'], 
             how='left',
-            suffixes=('_team1', '_team2')
+            suffixes=('_team1_bowl', '_team2_bowl')
         )
+        
+        # Rename columns to consistent names
+        self.matches = self.matches.rename(columns={
+            'batting_rr': 'batting_rr_team1',
+            'batting_rr_team1_bat': 'batting_rr_team2',
+            'death_economy': 'death_economy_team1',
+            'death_economy_team1_bowl': 'death_economy_team2'
+        })
     
     def _get_last_n_matches(self, team: str, n: int = 5, before_match_id: Optional[int] = None) -> pd.DataFrame:
         """Get last N matches for a team, optionally before a specific match_id."""
