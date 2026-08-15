@@ -124,3 +124,7 @@ See [`docs/council_design.md`](docs/council_design.md) for full system architect
 ## License
 
 MIT
+
+---
+
+> **⚠️ Vibe Coding Alert:** This project was built with AI assistance. The code works, the backtests are real, but the form agent's 43.7% accuracy is a feature, not a bug — it taught us that "hot team" narratives are noise. [Inspired by karpathy's llm-council](https://github.com/karpathy/llm-council).
