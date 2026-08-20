@@ -1,103 +1,139 @@
 # Cricket AI Council
 
-Multi-agent system for IPL match prediction. Tests whether recent form or historical stats matter more.
+An AI-powered decision support system for cricket match strategy, featuring a council of three specialized agents (Tactical, Data, Evaluator) that collaborate to provide data-driven insights for coaches and analysts.
 
-## Results
+## Problem
 
-Backtested on 144 held-out matches (2023-24 IPL):
+Cricket teams need to make dozens of strategic decisions before and during matches—toss calls, batting orders, bowling changes, and chase targets. These decisions are often based on intuition rather than historical evidence. The Cricket AI Council transforms raw match data into actionable strategic recommendations.
 
-| Agent | Signal | Accuracy |
-|-------|--------|----------|
-| Stats Agent | Historical aggregates (H2H, venue, toss) | 55.6% |
-| Form Agent | Last 5 matches (win%, batting RR, death bowling) | 43.7% |
-| **Formulator Agent** | Weighted fusion (70% stats + 30% form) | **58.3%** |
-
-Finding: Recent form alone is noise (43.7%), but fused with stats at ~30% weight, it adds signal. Ensemble beats either signal alone.
-
-## Structure
+## Architecture
 
 ```
-cricket-ai-council/
-├── agents/
-│   ├── stats_agent.py      # Historical stats
-│   ├── form_agent.py       # Recent form
-│   └── formulator_agent.py # Fusion (weighted ensemble)
-├── data/processed/         # matches.csv, deliveries.csv
-├── evaluation/             # Backtest harnesses + results
-└── docs/council_design.md  # Design notes
-```
-
-## Usage
-
-```bash
-git clone https://github.com/ATULPS2001/cricket-ai-council.git
-cd cricket-ai-council
-pip install pandas
-
-# Run backtests
-python evaluation/backtest_stats_agent.py
-python evaluation/backtest_form_agent.py
-python evaluation/backtest_formulator_agent.py
+┌─────────────────────────────────────────────────────────────┐
+│                     User Query                              │
+│  "We're playing CSK at Chepauk, what's our game plan?"      │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Orchestrator                             │
+│  - Parses query (team, venue, context)                      │
+│  - Routes to appropriate agents                             │
+│  - Synthesizes final response                               │
+└─────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+    ┌────────────────┐ ┌──────────────┐ ┌──────────────┐
+    │ Tactical Agent │ │  Data Agent  │ │ Evaluator    │
+    │                │ │              │ │ Agent        │
+    │ - Game plans   │ │ - Stats &    │ │ - Risk       │
+    │ - Player       │ │   trends     │ │   assessment │
+    │   matchups     │ │ - Historical │ │ - Confidence │
+    │ - Phase        │ │   records    │ │   scoring    │
+    │   strategies   │ │ - H2H data   │ │              │
+    └────────────────┘ └──────────────┘ └──────────────┘
+              │               │               │
+              └───────────────┼───────────────┘
+                              ▼
+                  ┌───────────────────────┐
+                  │   CricketInsights     │
+                  │   (Data Engine)       │
+                  │                       │
+                  │ - Powerplay/Death     │
+                  │ - Chase success by    │
+                  │   target bracket      │
+                  │ - Venue dominance     │
+                  │ - Collapse/recovery   │
+                  │ - Toss conversion     │
+                  └───────────────────────┘
+                              │
+                              ▼
+                  ┌───────────────────────┐
+                  │   Gemini LLM          │
+                  │   (Response Gen)      │
+                  └───────────────────────┘
 ```
 
 ## Agents
 
-### Stats Agent
+| Agent | Role | Output |
+|-------|------|--------|
+| **Tactical Agent** | Head Coach persona | Actionable game plans, player matchups, phase strategies |
+| **Data Agent** | Analyst persona | Statistics, trends, historical comparisons, probabilities |
+| **Evaluator Agent** | Strategist persona | Risk assessment, confidence scoring, alternative scenarios |
 
-```python
-from agents.stats_agent import StatsAgent
-import pandas as pd
+## Sample Input/Output
 
-matches = pd.read_csv("data/processed/matches.csv")
-deliveries = pd.read_csv("data/processed/deliveries.csv")
-agent = StatsAgent(matches, deliveries)
-
-verdict = agent.analyze({
-    "type": "toss_bat_gamble",
-    "teams": ["Mumbai Indians", "Chennai Super Kings"],
-    "venue": "Wankhede Stadium, Mumbai"
-})
-print(verdict.prediction, verdict.confidence, verdict.reasoning)
+### Input
+```
+Role: Tactical Agent
+Query: "We're playing CSK at Chepauk next week. They've won 76% of home games.
+        What's our batting strategy?"
 ```
 
-### Form Agent
+### Output
+```
+Tactical Agent Response:
 
-```python
-from agents.form_agent import FormAgent
-agent = FormAgent(matches, deliveries)
+"Given CSK's 76% home win rate at Chepauk, here's your batting strategy:
 
-verdict = agent.analyze({
-    "type": "form_check",
-    "teams": ["Mumbai Indians", "Chennai Super Kings"],
-    "match_id": 1234567
-})
-print(verdict.prediction, verdict.confidence, verdict.reasoning)
+1. Powerplay (Overs 1-6): Target 45-50 runs. CSK's new ball bowlers 
+   average 0.54 runs/ball in powerplay. Use aggressive left-right 
+   combinations to disrupt their line.
+
+2. Middle Overs (7-15): Preserve wickets. CSK's spin duo typically 
+   bowls 8 overs in this phase with 0.48 runs/ball economy. 
+   Rotate strike, avoid risky shots over mid-wicket.
+
+3. Death Overs (16-20): If 2+ wickets in hand, target 10-12 runs/over. 
+   CSK concedes 0.57 runs/ball in death overs. Pre-identify 
+   finishers for specific bowler matchups.
+
+Key Matchup: Your right-handers vs their off-spinner—historical SR 145.
+             Use this advantage in overs 8-12."
 ```
 
-### Formulator Agent
+## Quick Start
 
-```python
-from agents.formulator_agent import FormulatorAgent
-agent = FormulatorAgent(matches, deliveries, w_stats=0.7, w_form=0.3)
+```bash
+# 1. Clone and install
+git clone https://github.com/ATULPS2001/cricket-ai-council.git
+cd cricket-ai-council
+pip3 install -r requirements.txt
 
-verdict = agent.analyze({
-    "type": "toss_bat_gamble",
-    "teams": ["Mumbai Indians", "Chennai Super Kings"],
-    "venue": "Wankhede Stadium, Mumbai"
-})
-print(verdict.prediction, verdict.confidence, verdict.reasoning)
+# 2. Set API key
+export GOOGLE_API_KEY="your-gemini-api-key"
+
+# 3. Run the council
+python3 cli_council.py
 ```
 
-## Methodology
+## Project Structure
 
-- Train: 874 matches (2008-2022)
-- Test: 144 matches (2023-24)
-- Excluded ties/no-results
+```
+cricket-ai-council/
+├── agents/              # AI agent implementations
+│   ├── base_agent.py
+│   ├── tactical_agent.py
+│   ├── data_agent.py
+│   └── evaluator_agent.py
+├── analysis/            # Data analytics engine
+│   └── insights.py
+├── orchestrator/        # Query routing & synthesis
+├── data/processed/      # Match data (CSV)
+├── examples/            # Demo scripts
+├── docs/                # Architecture & design docs
+├── requirements.txt
+└── README.md
+```
 
-## Notes
+## Data Sources
 
-Built with AI assistance. Code works, backtests are real. The 43.7% form failure taught us: decompose signals first, fuse second. Ensemble methods win.
+- Ball-by-ball delivery data from IPL matches (2008-2024)
+- Match results, toss decisions, venue statistics
+- Processed into `matches.csv` and `deliveries.csv`
 
-See [docs/council_design.md](docs/council_design.md) for full design.
+## License
 
-License: MIT
+MIT License
