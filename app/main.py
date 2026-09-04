@@ -1,18 +1,29 @@
 """FastAPI backend for Cricket AI Council."""
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Literal
+from typing import Literal, Optional
 import sys
 from pathlib import Path
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from workflow import CricketWorkflow
-from config import validate_config, API_HOST, API_PORT
+from agents.stats_agent import StatsAgent
+from agents.form_agent import FormAgent
+from agents.formulator_agent import FormulatorAgent
+from config import validate_config, API_HOST, API_PORT, DATA_DIR
 
 validate_config()
+
+# Load data once at startup
+matches_df = pd.read_csv(DATA_DIR / "matches.csv")
+deliveries_df = pd.read_csv(DATA_DIR / "deliveries.csv")
+
+stats_agent = StatsAgent(matches_df, deliveries_df)
+form_agent = FormAgent(matches_df, deliveries_df)
+formulator_agent = FormulatorAgent(matches_df, deliveries_df)
 
 app = FastAPI(
     title="Cricket AI Council API",
@@ -23,13 +34,17 @@ app = FastAPI(
 
 class QueryRequest(BaseModel):
     query: str
-    role: Literal["tactical", "data", "evaluator"] = "tactical"
+    role: Literal["stats", "form", "formulator"] = "stats"
+    teams: Optional[list] = None
+    venue: Optional[str] = None
 
 
 class QueryResponse(BaseModel):
     query: str
     role: str
-    response: str
+    prediction: Optional[str] = None
+    confidence: Optional[float] = None
+    reasoning: Optional[str] = None
     success: bool = True
 
 
@@ -41,19 +56,34 @@ def health_check():
 @app.post("/query", response_model=QueryResponse)
 def query_council(request: QueryRequest):
     try:
-        workflow = CricketWorkflow()
-        response = workflow.run(request.query, request.role)
+        # Build structured question for agents
+        question = {
+            "type": "toss_bat_gamble" if "toss" in request.query.lower() or "bat" in request.query.lower() else "form_check",
+            "teams": request.teams or [],
+            "venue": request.venue,
+        }
+        
+        if request.role == "stats":
+            verdict = stats_agent.analyze(question)
+        elif request.role == "form":
+            verdict = form_agent.analyze(question)
+        elif request.role == "formulator":
+            verdict = formulator_agent.analyze(question)
+        else:
+            raise ValueError(f"Unknown role: {request.role}")
 
         return QueryResponse(
             query=request.query,
             role=request.role,
-            response=response,
+            prediction=verdict.prediction,
+            confidence=verdict.confidence,
+            reasoning=verdict.reasoning,
             success=True
         )
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Workflow execution failed: {str(e)}"
+            detail=f"Agent execution failed: {str(e)}"
         )
 
 
@@ -62,6 +92,7 @@ def root():
     return {
         "service": "Cricket AI Council",
         "version": "1.0.0",
+        "agents": ["stats", "form", "formulator"],
         "endpoints": {
             "health": "/health",
             "query": "/query (POST)"
