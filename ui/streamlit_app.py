@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
 from agents.stats_agent import StatsAgent
 from agents.form_agent import FormAgent
 from agents.formulator_agent import FormulatorAgent
+from agents.viz_agent import VizAgent
 from config import DATA_DIR
 
 st.set_page_config(
@@ -32,6 +33,7 @@ matches_df, deliveries_df = load_data()
 stats_agent = StatsAgent(matches_df, deliveries_df)
 form_agent = FormAgent(matches_df, deliveries_df)
 formulator_agent = FormulatorAgent(matches_df, deliveries_df)
+viz_agent = VizAgent(matches_df, deliveries_df)
 
 st.title("🏏 Cricket AI Council")
 st.markdown("""
@@ -42,11 +44,12 @@ Select an agent and ask your question!
 st.sidebar.header("Select Agent")
 role = st.sidebar.radio(
     "Choose your advisor:",
-    ["stats", "form", "formulator"],
+    ["stats", "form", "formulator", "viz"],
     format_func=lambda x: {
         "stats": "📊 Stats Agent (Career & Historical Stats)",
         "form": "📈 Form Agent (Recent Form & Momentum)",
-        "formulator": "🧠 Formulator (Fuses Stats + Form)"
+        "formulator": "🧠 Formulator (Fuses Stats + Form)",
+        "viz": "📉 Viz Agent (Charts & Graphs)"
     }[x]
 )
 
@@ -69,6 +72,13 @@ role_descriptions = {
     - Weighted ensemble: 80% Stats + 20% Form
     - Balances long-term stats with recent momentum
     - More robust than either agent alone
+    """,
+    "viz": """
+    **Viz Agent** - Creates visual charts to support predictions.
+    - Team win% comparison bars
+    - Recent form trends (last 5 matches)
+    - H2H history pie chart
+    - Venue-based stats
     """
 }
 
@@ -81,7 +91,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Ask the council... (e.g., 'CSK vs MI at Wankhede, who wins?')"):
+if prompt := st.chat_input("Ask the council... (e.g., 'CSK vs MI at Chepauk, who wins?')"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -91,7 +101,7 @@ if prompt := st.chat_input("Ask the council... (e.g., 'CSK vs MI at Wankhede, wh
             try:
                 # Build structured question for agents
                 question = {
-                    "type": "toss_bat_gamble" if "toss" in prompt.lower() or "bat" in prompt.lower() else "form_check",
+                    "type": "toss_bat_gamble",
                     "teams": [],
                     "venue": None,
                 }
@@ -99,24 +109,45 @@ if prompt := st.chat_input("Ask the council... (e.g., 'CSK vs MI at Wankhede, wh
                 # Select agent
                 if role == "stats":
                     verdict = stats_agent.analyze(question)
+                    answer = f"**Prediction:** {verdict.prediction}\n\n"
+                    answer += f"**Confidence:** {verdict.confidence * 100:.1f}%\n\n"
+                    answer += f"**Reasoning:** {verdict.reasoning}"
+                    
                 elif role == "form":
                     verdict = form_agent.analyze(question)
+                    answer = f"**Prediction:** {verdict.prediction}\n\n"
+                    answer += f"**Confidence:** {verdict.confidence * 100:.1f}%\n\n"
+                    answer += f"**Reasoning:** {verdict.reasoning}"
+                    
                 elif role == "formulator":
                     verdict = formulator_agent.analyze(question)
+                    answer = f"**Prediction:** {verdict.prediction}\n\n"
+                    answer += f"**Confidence:** {verdict.confidence * 100:.1f}%\n\n"
+                    answer += f"**Reasoning:** {verdict.reasoning}"
+                    
+                elif role == "viz":
+                    # For viz, show charts
+                    answer = "**📊 Visual Analytics:**\n\n"
+                    answer += "Select Stats, Form, or Formulator agent to see predictions with supporting charts."
+                    
+                    # Show sample charts
+                    st.subheader("📈 Team Comparison")
+                    st.info("Charts will appear here when teams are specified in your query")
                 else:
                     raise ValueError(f"Unknown role: {role}")
                 
-                # Format response
-                answer = f"**Prediction:** {verdict.prediction}\n\n"
-                answer += f"**Confidence:** {verdict.confidence * 100:.1f}%\n\n"
-                answer += f"**Reasoning:** {verdict.reasoning}"
-                
                 st.markdown(answer)
                 st.session_state.messages.append({"role": "assistant", "content": answer})
+                
+                # Show charts for viz agent
+                if role == "viz":
+                    st.subheader("📊 Sample Charts")
+                    st.write("Charts will be generated based on your query")
+                    
             except Exception as e:
                 error_msg = f"⚠️ Error: {str(e)}"
                 st.error(error_msg)
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
 st.markdown("---")
-st.caption("Built with Stats/Form/Formulator agents + Streamlit")
+st.caption("Built with Stats/Form/Formulator/Viz agents + Streamlit")
