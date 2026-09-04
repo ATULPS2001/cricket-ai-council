@@ -95,19 +95,24 @@ class StatsAgent(BaseAgent):
         venue = question.get('venue')
         if len(teams) != 2:
             raise ValueError("toss_bat_gamble requires exactly 2 teams")
+        
         venue_matches = self.matches if venue is None else self.matches[self.matches['venue'].str.contains(venue, case=False, na=False)]
         team1 = teams[0]
         team2 = teams[1]
+        
         t1_wins = venue_matches[(venue_matches['team1'].isin([team1, team2])) & (venue_matches['winner'] == team1)].shape[0]
         t2_wins = venue_matches[(venue_matches['team1'].isin([team1, team2])) & (venue_matches['winner'] == team2)].shape[0]
         total = t1_wins + t2_wins
+        
         if total == 0:
             prediction = f"No historical data for {team1} vs {team2} at {venue}"
             confidence = 0.1
+            t1_pct = 0.5
         else:
             t1_pct = t1_wins / total
             prediction = team1 if t1_pct > 0.5 else team2
             confidence = max(t1_pct, 1 - t1_pct)
+        
         reasoning = f"At {venue or 'all venues'}, {team1} won {t1_wins}/{total} ({t1_pct:.1%}) vs {team2} won {t2_wins}/{total}. Prediction: {prediction}."
         return AgentVerdict(agent_name=self.name, prediction=prediction, confidence=confidence, reasoning=reasoning)
 
