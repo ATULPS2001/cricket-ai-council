@@ -1,123 +1,185 @@
-# Cricket AI Council
+# 🏏 Cricket AI Council
 
-A multi-agent AI system that answers cricket strategy and analytics questions by combining historical match data, tool-based retrieval, and LLM reasoning. Three specialized agents — Tactical (Head Coach), Data (Analyst), and Evaluator (Chief Strategist) — draw on a shared cricket dataset through an MCP-style tool layer, and every response is orchestrated through an explicit LangGraph workflow with a built-in critic step for citation and hallucination checks.
+**Multi-agent AI system for cricket match predictions and analytics.**
+
+Built with:
+- **Stats Agent** - Career statistics and historical records
+- **Form Agent** - Recent form and momentum analysis
+- **Formulator Agent** - Fuses predictions from both agents
+- **FastAPI** - Backend API
+- **Streamlit** - Interactive UI
 
 ## Architecture
 
 ```
-                    ┌─────────────────────┐
-                    │   User Query + Role  │
-                    │ (tactical/data/eval) │
-                    └──────────┬───────────┘
-                               │
-                    ┌──────────▼───────────┐
-                    │   FastAPI  /query     │
-                    │   (app/main.py)       │
-                    └──────────┬───────────┘
-                               │
-                    ┌──────────▼───────────┐
-                    │  LangGraph Workflow   │
-                    │   (workflow.py)       │
-                    │                       │
-                    │  ┌─────────────────┐  │
-                    │  │  Research Node  │──┼──► MCP Tools (mcp_server.py)
-                    │  └────────┬────────┘  │      - get_team_stats
-                    │           │           │      - get_venue_record
-                    │  ┌────────▼────────┐  │      - get_h2h
-                    │  │  Strategy Node  │──┼──► Gemini LLM (role-specific
-                    │  └────────┬────────┘  │      system prompt)
-                    │           │           │
-                    │  ┌────────▼────────┐  │
-                    │  │   Critic Node   │  │  (adds citations,
-                    │  └────────┬────────┘  │   flags missing data)
-                    └───────────┼───────────┘
-                                │
-                    ┌───────────▼───────────┐
-                    │   Final Response      │
-                    │  (Streamlit UI /      │
-                    │   API JSON response)  │
-                    └───────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                     Streamlit UI                            │
+│  (Select agent: Stats / Form / Formulator)                  │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│                     FastAPI Backend                         │
+│  /query endpoint → routes to selected agent                 │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│                      Agent Layer                            │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────┐              │
+│  │  Stats   │  │   Form   │  │  Formulator  │              │
+│  │  Agent   │  │  Agent   │  │    Agent     │              │
+│  └──────────┘  └──────────┘  └──────────────┘              │
+│       ↓              ↓              ↑                       │
+│  Career stats   Recent form   Fuses both                   │
+│  H2H records    Last 5 games  (80% Stats + 20% Form)       │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│                     Data Layer                              │
+│  data/processed/matches.csv  (match-level aggregates)       │
+│  data/processed/deliveries.csv (ball-by-ball data)          │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**Data layer:** `analysis/insights.py` computes venue trends, phase (powerplay/death) performance, chase-success brackets, toss conversion, and team-venue dominance from `data/processed/matches.csv` and `deliveries.csv`. `mcp_server.py` exposes these as callable tools for the agents.
+## Agents
 
-## Sample Input / Output
+### 📊 Stats Agent
 
-**Input:**
-```json
-{
-  "query": "Playing CSK at Chepauk, what's our batting strategy?",
-  "role": "tactical"
-}
-```
+Analyzes **career statistics and historical records**:
 
-**Output:**
-```
-Given CSK's strong home record at Chepauk:
+- Career batting averages and strike rates
+- Bowling economy rates and averages
+- Head-to-head records between teams/players
+- Venue-based win percentages
 
-- Powerplay: Rotate strike, avoid early risk against new-ball swing
-- Middle overs: Preserve wickets, target spin matchups
-- Death: CSK's death bowling economy is competitive — plan for 9-10 runs/over, not 12+
+**Best for:** Questions about long-term performance, career comparisons, historical matchups.
 
-Sources:
-[source: chepauk_record]
-[source: csk_stats]
-```
+### 📈 Form Agent
+
+Evaluates **recent form and momentum**:
+
+- Last 5 matches: win%, batting run rate, death-over bowling economy
+- Recent H2H record (last 5 meetings)
+- Form differential between two teams
+
+**Best for:** Questions about current momentum, recent performance trends, "hot/cold" teams.
+
+### 🧠 Formulator Agent
+
+**Fuses predictions from Stats and Form agents** using weighted ensemble:
+
+- Default weights: 80% Stats + 20% Form
+- Balances long-term statistics with recent momentum
+- More robust than either agent alone (since Form Agent underperforms at ~44% accuracy)
+
+**Best for:** General predictions where you want both historical context and recent form considered.
 
 ## Quick Start
+
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/ATULPS2001/cricket-ai-council.git
 cd cricket-ai-council
 pip install -r requirements.txt
-export GOOGLE_API_KEY="your-gemini-key"
-
-# Run the workflow standalone
-python3 workflow.py
-
-# Run the API
-uvicorn app.main:app --reload
-
-# Run the UI (separate terminal)
-streamlit run ui/streamlit_app.py
 ```
 
-### Docker
+### 2. Set up environment
 
 ```bash
-echo "GOOGLE_API_KEY=your-key" > .env
-docker compose up --build
+# Set your Google API key (for future LLM features)
+export GOOGLE_API_KEY='your-key-here'
+
+# Optional: customize config in config.py
+# - API_HOST, API_PORT
+# - DATA_DIR
 ```
 
-- API: http://localhost:8000/docs
-- UI: http://localhost:8501
+### 3. Prepare data
 
-See `QUICKSTART.md` for more detail.
+```bash
+# Download IPL data from Cricsheet (if not already done)
+# Place in data/raw/ folder
+
+# Process into matches.csv and deliveries.csv
+python data/load_cricsheet.py
+```
+
+### 4. Run the system
+
+**Terminal 1 - Start FastAPI backend:**
+```bash
+python app/main.py
+# Runs on http://localhost:8000
+```
+
+**Terminal 2 - Start Streamlit UI:**
+```bash
+streamlit run ui/streamlit_app.py
+# Opens at http://localhost:8501
+```
+
+## API Endpoints
+
+### `GET /`
+Health check and service info.
+
+### `GET /health`
+Returns `{"status": "healthy"}`.
+
+### `POST /query`
+Query an agent for a prediction.
+
+**Request:**
+```json
+{
+  "query": "CSK vs MI at Wankhede, who wins?",
+  "role": "stats",  // or "form" or "formulator"
+  "teams": ["Chennai Super Kings", "Mumbai Indians"],
+  "venue": "Wankhede"
+}
+```
+
+**Response:**
+```json
+{
+  "query": "CSK vs MI at Wankhede, who wins?",
+  "role": "stats",
+  "prediction": "Mumbai Indians",
+  "confidence": 0.65,
+  "reasoning": "At Wankhede, Chennai Super Kings won 3/8 (37.5%) vs Mumbai Indians won 5/8. Prediction: Mumbai Indians.",
+  "success": true
+}
+```
 
 ## Project Structure
 
 ```
 cricket-ai-council/
-├── analysis/         # Core cricket analytics (venue, phase, chase, H2H trends)
-├── mcp_server.py     # Tool layer exposing analytics to agents
-├── workflow.py        # LangGraph orchestration (research → strategy → critic)
-├── agents/            # Role-specific agent logic
-├── app/main.py         # FastAPI backend
-├── ui/streamlit_app.py # Streamlit chat interface
-├── rag/               # Chroma-based retrieval (index.py, retrieve.py)
-├── data/               # Processed matches/deliveries CSVs
-├── Dockerfile
-├── docker-compose.yml
-└── .github/workflows/  # CI pipeline
+├── agents/              # Agent implementations
+│   ├── base_agent.py    # Abstract base class
+│   ├── stats_agent.py   # Career stats agent
+│   ├── form_agent.py    # Recent form agent
+│   └── formulator_agent.py  # Fusion agent
+├── app/                 # FastAPI backend
+│   └── main.py
+├── ui/                  # Streamlit frontend
+│   └── streamlit_app.py
+├── data/                # Data pipeline
+│   ├── raw/             # Raw Cricsheet JSON files
+│   └── processed/       # CSV files (matches.csv, deliveries.csv)
+├── config.py            # Configuration
+├── requirements.txt     # Python dependencies
+└── README.md
 ```
 
-## Tech Stack
+## Future Work
 
-- **Orchestration:** LangGraph
-- **LLM:** Google Gemini
-- **Tool layer:** Custom MCP-style server (`mcp_server.py`)
-- **Retrieval:** Chroma (RAG over match reports/scorecards)
-- **Backend:** FastAPI
-- **Frontend:** Streamlit
-- **Data:** pandas-based analytics over historical IPL ball-by-ball data
-- **Deployment:** Docker + GitHub Actions CI
+- [ ] Add Coach/Analyst/Strategist agent roles (LLM-powered)
+- [ ] Integrate real-time match data
+- [ ] Add player matchup analysis
+- [ ] Build prediction tracking and backtesting
+- [ ] Deploy to cloud (Render/Railway)
+
+## License
+
+MIT
